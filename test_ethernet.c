@@ -61,7 +61,7 @@ int main()
     char ifname[IFNAMSIZ];
     strlcpy(ifname, "enp4s0", IFNAMSIZ);
 
-    int raw_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+    int raw_sock = socket(AF_PACKET, SOCK_DGRAM, htons(ETH_P_ALL));
     if (raw_sock == -1) {
         perror("Unable to create packet raw socket");
         exit_code = 1;
