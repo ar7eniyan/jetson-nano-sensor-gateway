@@ -9,6 +9,7 @@
 #include <linux/if_packet.h>  // struct sockaddr_ll and others
 #include <net/ethernet.h>  // ETH_P_* constants
 
+#define CUSTOM_ETHERTYPE 0xDEAD
 
 int mac_addr_from_ifname(int sock, char ifname[IFNAMSIZ], unsigned char (*mac_addr)[6])
 {
@@ -85,6 +86,18 @@ int main()
     printf("    index %d\n", ifindex);
     printf("    mac %02x:%02x:%02x:%02x:%02x:%02x\n",
         mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+
+    struct sockaddr_ll bind_addr = {
+        .sll_family = AF_PACKET,
+        .sll_protocol = CUSTOM_ETHERTYPE,
+        .sll_ifindex = ifindex
+    };
+
+    if (bind(raw_sock, (struct sockaddr *)&bind_addr, sizeof bind_addr) == -1) {
+        perror("Unable to bind to the interface and protocol: ");
+        exit_code = 1;
+        goto close_sock;
+    }
 
 close_sock:
     if(raw_sock != -1 && close(raw_sock) == -1) {
