@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 #include <unistd.h>  // close()
 #include <sys/ioctl.h>  // ioctl()
 #include <net/if.h>  // struct ifreq, various ioctls
@@ -18,7 +17,7 @@ int mac_addr_from_ifname(int sock, char ifname[IFNAMSIZ], unsigned char (*mac_ad
         fprintf(stderr, "Ifname is not NULL-terminated\n");
         return -1;
     }
-    
+
     struct ifreq req = {0};
     strcpy(req.ifr_name, ifname);
     if (ioctl(sock, SIOCGIFHWADDR, &req) == -1) {
@@ -45,14 +44,14 @@ int ifindex_from_ifname(int sock, char ifname[IFNAMSIZ])
         fprintf(stderr, "Ifname is not NULL-terminated\n");
         return -1;
     }
-    
+
     struct ifreq req = {0};
     strcpy(req.ifr_name, ifname);
     if (ioctl(sock, SIOCGIFINDEX, &req) == -1) {
         perror("Unable to request the index of the interface");
         return -1;
     }
-    
+
     return req.ifr_ifindex;
 }
 
@@ -61,7 +60,7 @@ int main()
     int exit_code = 0;
     char ifname[IFNAMSIZ];
     strlcpy(ifname, "enp4s0", IFNAMSIZ);
-    
+
     int raw_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
     if (raw_sock == -1) {
         perror("Unable to create packet raw socket");
