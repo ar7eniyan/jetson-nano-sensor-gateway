@@ -130,6 +130,59 @@ int main()
         goto close_sock;
     }
 
+    const char pong[4] = {'p', 'o', 'n', 'g'};
+    char recv_buf[sizeof pong];
+    struct sockaddr_ll recv_addr;
+    socklen_t recv_addrlen = sizeof recv_addr;
+    for (;;) {
+        ret = recvfrom(
+            raw_sock, recv_buf, sizeof recv_buf, 0,
+            (struct sockaddr *)&recv_addr, &recv_addrlen
+        );
+        if (ret == -1) {
+            perror("Error receiving pong packet: ");
+            exit_code = 1;
+            goto close_sock;
+        }
+        if (recv_addrlen != sizeof recv_addr) {
+            fprintf(stderr, "Invalid address returned from recvfrom()\n");
+            exit_code = 1;
+            goto close_sock;
+        }
+        if (recv_addr.sll_hatype != ARPHRD_ETHER) {
+            fprintf(
+                stderr,
+                "Got packet with unexpected ARP hardware type: %d, expected %d (ARPHDR_ETHER)\n",
+                recv_addr.sll_hatype, ARPHRD_ETHER
+            );
+            exit_code = 1;
+            goto close_sock;
+        }
+        if (recv_addr.sll_halen != periph_ctrl_addr.sll_halen) {
+            fprintf(
+                stderr, "Got packet with unexpected hw address length: %d, expected %d\n",
+                recv_addr.sll_halen, periph_ctrl_addr.sll_halen
+            );
+            exit_code = 1;
+            goto close_sock;
+        }
+        if (
+            recv_addr.sll_pkttype != PACKET_HOST ||
+            ntohs(recv_addr.sll_protocol != CUSTOM_ETHERTYPE) ||
+            memcmp(recv_addr.sll_addr, periph_ctrl_addr.sll_addr, periph_ctrl_addr.sll_halen) != 0
+        ) {
+            continue;
+        }
+        if (ret != sizeof pong && memcmp(recv_buf, pong, sizeof pong)) {
+            fprintf(stderr, "Got invalid pong message != ['p', 'o', 'n', 'g'] (length %d)\n", ret);
+            exit_code = 1;
+            goto close_sock;
+        }
+        break;
+    }
+
+    printf("YEAAAAAH!\n");
+
 close_sock:
     if(raw_sock != -1 && close(raw_sock) == -1) {
         perror("Somehow close() failed");
