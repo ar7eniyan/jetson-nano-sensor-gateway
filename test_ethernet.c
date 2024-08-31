@@ -66,9 +66,8 @@ int ifindex_from_ifname(int sock, char ifname[IFNAMSIZ])
 // TODO: move into a header
 typedef struct {
     int sockfd;
-    int ifindex;
-    unsigned char peer_mac_bytes[6];
-    uint16_t ethertype;
+    // sll_family, sll_protocol, sll_ifindex, sll_addr and sll_halen are used
+    struct sockaddr_ll peer_addr;  
 } eth_comms_t;
 
 typedef struct {
@@ -110,21 +109,22 @@ int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t settings)
     printf("    mac %02x:%02x:%02x:%02x:%02x:%02x\n", mac_bytes[0],
         mac_bytes[1], mac_bytes[2], mac_bytes[3], mac_bytes[4], mac_bytes[5]);
 
-    struct sockaddr_ll bind_addr = {
+    // Fill in only the fields needed for bind()
+    struct sockaddr_ll peer_addr = {
         .sll_family = AF_PACKET,
         .sll_protocol = settings.ethertype,
-        .sll_ifindex = ifindex
+        .sll_ifindex = ifindex,
     };
 
-    if (bind(sockfd, (struct sockaddr *)&bind_addr, sizeof bind_addr) == -1) {
+    if (bind(sockfd, (struct sockaddr *)&peer_addr, sizeof peer_addr) == -1) {
         perror("Unable to bind to the interface and protocol: ");
         goto exit_error;
     }
 
     comms->sockfd = sockfd;
-    comms->ifindex = ifindex;
-    memcpy(comms->peer_mac_bytes, settings.peer_mac_ptr, 6);
-    comms->ethertype = settings.ethertype;
+    // Fields needed for further sends
+    memcpy(comms->peer_addr.sll_addr, settings.peer_mac_ptr, 6);
+    comms->peer_addr.sll_halen = 6;
     return 0;
 
 exit_error:
@@ -141,16 +141,8 @@ void eth_close(eth_comms_t *comms)
 
 int eth_send_frame(eth_comms_t *comms, const char *buf, size_t len)
 {
-    struct sockaddr_ll peer_addr = {
-        .sll_family = AF_PACKET,
-        .sll_protocol = htons(comms->ethertype),
-        .sll_ifindex = comms->ifindex,
-        .sll_halen = 6
-    };
-    memcpy(peer_addr.sll_addr, comms->peer_mac_bytes, 6);
-
     int ret = sendto(comms->sockfd, buf, sizeof buf, 0,
-        (struct sockaddr *)&peer_addr, sizeof peer_addr);
+        (struct sockaddr *)&comms->peer_addr, sizeof comms->peer_addr);
     if (ret == -1) {
         perror("Error sending Ethernet frame");
     }
@@ -183,7 +175,7 @@ int eth_recv_frame(eth_comms_t *comms, char *buf, size_t len)
         );
         if (recv_addr.sll_pkttype == PACKET_HOST &&
             ntohs(recv_addr.sll_protocol == CUSTOM_ETHERTYPE) &&
-            memcmp(recv_addr.sll_addr, comms->peer_mac_bytes, 6) == 0
+            memcmp(recv_addr.sll_addr, comms->peer_addr.sll_addr, 6) == 0
         ) {
             return ret;
         }
