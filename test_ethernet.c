@@ -155,18 +155,17 @@ int main()
             "Got packet with unexpected MAC address length"
         );
         if (
-            recv_addr.sll_pkttype != PACKET_HOST ||
-            ntohs(recv_addr.sll_protocol != CUSTOM_ETHERTYPE) ||
-            memcmp(recv_addr.sll_addr, periph_ctrl_addr.sll_addr, periph_ctrl_addr.sll_halen) != 0
+            recv_addr.sll_pkttype == PACKET_HOST &&
+            ntohs(recv_addr.sll_protocol == CUSTOM_ETHERTYPE) &&
+            memcmp(recv_addr.sll_addr, periph_ctrl_addr.sll_addr, periph_ctrl_addr.sll_halen) == 0
         ) {
-            continue;
-        }
-        if (ret != sizeof pong && memcmp(recv_buf, pong, sizeof pong)) {
-            fprintf(stderr, "Got invalid pong message != ['p', 'o', 'n', 'g'] (length %d)\n", ret);
+            if (ret == sizeof pong && memcmp(recv_buf, pong, sizeof pong) == 0) {
+                break;
+            }
+            fprintf(stderr, "Got pong message != ['p', 'o', 'n', 'g'] (length %d)\n", ret);
             exit_code = 1;
             goto close_sock;
         }
-        break;
     }
 
     printf("YEAAAAAH!\n");
