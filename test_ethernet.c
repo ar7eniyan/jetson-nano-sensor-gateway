@@ -1,13 +1,14 @@
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>  // close()
-#include <sys/ioctl.h>  // ioctl()
+#include <arpa/inet.h>  // htons()
+#include <net/ethernet.h>  // ETH_P_* constants
 #include <net/if.h>  // struct ifreq, various ioctls
 #include <net/if_arp.h>  // ARPHRD_ETHER
-#include <arpa/inet.h>  // htons()
+#include <stdio.h>
+#include <string.h>
+#include <sys/ioctl.h>  // ioctl()
 #include <sys/socket.h>  // socket()
+#include <unistd.h>  // close()
+
 #include <linux/if_packet.h>  // struct sockaddr_ll and others
-#include <net/ethernet.h>  // ETH_P_* constants
 
 #define CUSTOM_ETHERTYPE 0xDEAD
 
