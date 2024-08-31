@@ -19,7 +19,8 @@
 typedef struct {
     int sockfd;
     int ifindex;
-} bound_raw_sock_t;
+    unsigned char peer_mac[6];
+} eth_comms_t;
 
 int mac_addr_from_ifname(
     int sock, char ifname[IFNAMSIZ], unsigned char (*mac_addr)[6]
@@ -65,11 +66,17 @@ int ifindex_from_ifname(int sock, char ifname[IFNAMSIZ])
     return req.ifr_ifindex;
 }
 
-int raw_sock_open_and_bind(
-    bound_raw_sock_t *raw_sock, const char *ifname, uint16_t ethertype
-) {
+typedef struct {
+    const char *ifname;
+    uint16_t ethertype;
+    unsigned char *peer_mac_ptr;  // Must be 6 bytes long!
+} eth_open_and_bind_params_t;
+
+int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t settings)
+{
     char ifname_buf[IFNAMSIZ];
-    if (strlcpy(ifname_buf, ifname, sizeof ifname_buf) >= sizeof ifname_buf) {
+    size_t ifname_sz = strlcpy(ifname_buf, settings.ifname, sizeof ifname_buf);
+    if (ifname_sz >= sizeof ifname_buf) {
         fprintf(stderr, "The supplied ifname is too long (>15 chars)\n");
         goto exit_error;
     }
@@ -100,7 +107,7 @@ int raw_sock_open_and_bind(
 
     struct sockaddr_ll bind_addr = {
         .sll_family = AF_PACKET,
-        .sll_protocol = ethertype,
+        .sll_protocol = settings.ethertype,
         .sll_ifindex = ifindex
     };
 
@@ -109,8 +116,9 @@ int raw_sock_open_and_bind(
         goto exit_error;
     }
 
-    raw_sock->sockfd = sockfd;
-    raw_sock->ifindex = ifindex;
+    comms->sockfd = sockfd;
+    comms->ifindex = ifindex;
+    memcpy(comms->peer_mac, settings.peer_mac_ptr, 6);
     return 0;
 
 exit_error:
@@ -124,12 +132,6 @@ int main()
 {
     int ret, exit_code = 0;
 
-    bound_raw_sock_t raw_sock;
-    if (raw_sock_open_and_bind(&raw_sock, "enp4s0", CUSTOM_ETHERTYPE) == -1) {
-        fprintf(stderr, "Can't open the socket or bind to it, exiting...\n");
-        return 1;
-    }
-
     struct ether_addr *periph_ctrl_mac_addr = ether_aton(PERIPH_CTRL_MAC);
     if (periph_ctrl_mac_addr == NULL) {
         fprintf(stderr, "Invalid MAC address specified: %s\n", PERIPH_CTRL_MAC);
@@ -137,19 +139,27 @@ int main()
         goto close_sock;
     }
 
-    // Should I specify the ifindex for sending or is it set automatically after bind?
-    // NOTE: I should.
+    eth_comms_t comms;
+    ret = eth_open_and_bind(&comms, (eth_open_and_bind_params_t){
+        .ifname = "enp4s0", .ethertype = CUSTOM_ETHERTYPE,
+        .peer_mac_ptr = periph_ctrl_mac_addr->ether_addr_octet});
+    if (ret == -1) {
+        fprintf(stderr, "Can't open the socket or bind to it, exiting...\n");
+        return 1;
+    }
+
+ 
     struct sockaddr_ll periph_ctrl_addr = {
         .sll_family = AF_PACKET,
         .sll_protocol = htons(CUSTOM_ETHERTYPE),
-        .sll_ifindex = raw_sock.ifindex,
+        .sll_ifindex = comms.ifindex,
         .sll_halen = 6
     };
     memcpy(periph_ctrl_addr.sll_addr, periph_ctrl_mac_addr->ether_addr_octet, 6);
 
     const char ping[4] = {'p', 'i', 'n', 'g'};
     ret = sendto(
-        raw_sock.sockfd, ping, sizeof ping, 0,
+        comms.sockfd, ping, sizeof ping, 0,
         (struct sockaddr *)&periph_ctrl_addr, sizeof periph_ctrl_addr
     );
     if (ret == -1) {
@@ -164,7 +174,7 @@ int main()
     socklen_t recv_addrlen = sizeof recv_addr;
     for (;;) {
         ret = recvfrom(
-            raw_sock.sockfd, recv_buf, sizeof recv_buf, 0,
+            comms.sockfd, recv_buf, sizeof recv_buf, 0,
             (struct sockaddr *)&recv_addr, &recv_addrlen
         );
         if (ret == -1) {
@@ -198,7 +208,7 @@ int main()
     printf("YEAAAAAH!\n");
 
 close_sock:
-    if(close(raw_sock.sockfd) == -1) {
+    if(close(comms.sockfd) == -1) {
         perror("Somehow close() failed");
     }
 
