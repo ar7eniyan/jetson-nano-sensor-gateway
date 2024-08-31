@@ -1,3 +1,4 @@
+#include <assert.h>  // assert()
 #include <arpa/inet.h>  // htons()
 #include <net/ethernet.h>  // ETH_P_* constants
 #include <net/if.h>  // struct ifreq, various ioctls
@@ -144,28 +145,15 @@ int main()
             exit_code = 1;
             goto close_sock;
         }
-        if (recv_addrlen != sizeof recv_addr) {
-            fprintf(stderr, "Invalid address returned from recvfrom()\n");
-            exit_code = 1;
-            goto close_sock;
-        }
-        if (recv_addr.sll_hatype != ARPHRD_ETHER) {
-            fprintf(
-                stderr,
-                "Got packet with unexpected ARP hardware type: %d, expected %d (ARPHDR_ETHER)\n",
-                recv_addr.sll_hatype, ARPHRD_ETHER
-            );
-            exit_code = 1;
-            goto close_sock;
-        }
-        if (recv_addr.sll_halen != periph_ctrl_addr.sll_halen) {
-            fprintf(
-                stderr, "Got packet with unexpected hw address length: %d, expected %d\n",
-                recv_addr.sll_halen, periph_ctrl_addr.sll_halen
-            );
-            exit_code = 1;
-            goto close_sock;
-        }
+        assert(recv_addrlen == sizeof recv_addr &&
+            "Address of invalid length returned from recvfrom()"
+        );
+        assert(recv_addr.sll_hatype == ARPHRD_ETHER &&
+            "Got packet with unexpected ARP hardware type"
+        );
+        assert(recv_addr.sll_halen == periph_ctrl_addr.sll_halen &&
+            "Got packet with unexpected MAC address length"
+        );
         if (
             recv_addr.sll_pkttype != PACKET_HOST ||
             ntohs(recv_addr.sll_protocol != CUSTOM_ETHERTYPE) ||
