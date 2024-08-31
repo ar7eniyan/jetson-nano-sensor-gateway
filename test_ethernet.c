@@ -16,12 +16,6 @@
 #define CUSTOM_ETHERTYPE 0xDEAD
 #define PERIPH_CTRL_MAC "aa:bb:cc:dd:ee:ff"  // Placeholder for now
 
-typedef struct {
-    int sockfd;
-    int ifindex;
-    unsigned char peer_mac_bytes[6];
-    uint16_t ethertype;
-} eth_comms_t;
 
 int mac_addr_from_ifname(
     int sock, char ifname[IFNAMSIZ], unsigned char (*mac_addr)[6]
@@ -66,6 +60,15 @@ int ifindex_from_ifname(int sock, char ifname[IFNAMSIZ])
 
     return req.ifr_ifindex;
 }
+
+
+// TODO: move into a header
+typedef struct {
+    int sockfd;
+    int ifindex;
+    unsigned char peer_mac_bytes[6];
+    uint16_t ethertype;
+} eth_comms_t;
 
 typedef struct {
     const char *ifname;
