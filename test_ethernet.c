@@ -129,6 +129,7 @@ int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t params)
     }
 
     comms->sockfd = sockfd;
+    memcpy(&comms->peer_addr, &peer_addr, sizeof peer_addr);
     // Fields needed for further sends
     memcpy(comms->peer_addr.sll_addr, params.peer_mac_ptr, 6);
     comms->peer_addr.sll_halen = 6;
@@ -144,7 +145,7 @@ exit_error:
 // A close() wrapper for the underlying socket
 void eth_close(eth_comms_t *comms)
 {
-    assert(close(comms->sockfd) && "Can't close the socket");
+    assert(close(comms->sockfd) == 0 && "Can't close the socket");
 }
 
 // Send the frame to the configured MAC address with the configured EtherType.
