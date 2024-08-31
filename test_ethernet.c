@@ -18,6 +18,7 @@
 #define PERIPH_CTRL_MAC "aa:bb:cc:dd:ee:ff"  // Placeholder for now
 
 
+// Private utility functions
 int mac_addr_from_ifname(
     int sock, char ifname[IFNAMSIZ], unsigned char (*mac_addr)[6]
 ) {
@@ -63,11 +64,13 @@ int ifindex_from_ifname(int sock, char ifname[IFNAMSIZ])
 }
 
 
-// TODO: move into a header
+// Abstraction around a raw Ethernet socket associated with a single peer on a
+// specific network interface.
+// TODO: move into a separate header
 typedef struct {
     int sockfd;
     // sll_family, sll_protocol, sll_ifindex, sll_addr and sll_halen are used
-    struct sockaddr_ll peer_addr;  
+    struct sockaddr_ll peer_addr;
 } eth_comms_t;
 
 typedef struct {
@@ -76,10 +79,14 @@ typedef struct {
     unsigned char *peer_mac_ptr;  // Must be 6 bytes long!
 } eth_open_and_bind_params_t;
 
-int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t settings)
+// Open the raw socket, bind it to the specified network interface,
+// confiugure the EtherType and the peer MAC address.
+//
+// Returns: 0 on success, -1 on failure.
+int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t params)
 {
     char ifname_buf[IFNAMSIZ];
-    size_t ifname_sz = strlcpy(ifname_buf, settings.ifname, sizeof ifname_buf);
+    size_t ifname_sz = strlcpy(ifname_buf, params.ifname, sizeof ifname_buf);
     if (ifname_sz >= sizeof ifname_buf) {
         fprintf(stderr, "The supplied ifname is too long (>15 chars)\n");
         goto exit_error;
@@ -112,7 +119,7 @@ int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t settings)
     // Fill in only the fields needed for bind()
     struct sockaddr_ll peer_addr = {
         .sll_family = AF_PACKET,
-        .sll_protocol = settings.ethertype,
+        .sll_protocol = params.ethertype,
         .sll_ifindex = ifindex,
     };
 
@@ -123,7 +130,7 @@ int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t settings)
 
     comms->sockfd = sockfd;
     // Fields needed for further sends
-    memcpy(comms->peer_addr.sll_addr, settings.peer_mac_ptr, 6);
+    memcpy(comms->peer_addr.sll_addr, params.peer_mac_ptr, 6);
     comms->peer_addr.sll_halen = 6;
     return 0;
 
@@ -134,11 +141,14 @@ exit_error:
     return -1;
 }
 
+// A close() wrapper for the underlying socket
 void eth_close(eth_comms_t *comms)
 {
     assert(close(comms->sockfd) && "Can't close the socket");
 }
 
+// Send the frame to the configured MAC address with the configured EtherType.
+// Compatible with the POSIX send() except for the first argument.
 int eth_send_frame(eth_comms_t *comms, const char *buf, size_t len)
 {
     int ret = sendto(comms->sockfd, buf, sizeof buf, 0,
@@ -149,6 +159,9 @@ int eth_send_frame(eth_comms_t *comms, const char *buf, size_t len)
     return ret;
 }
 
+// Receive the first frame that matches the configured EtherType and peer MAC,
+// discarding everything else. Compatible with the POSIX recv() except for the
+// first argument
 int eth_recv_frame(eth_comms_t *comms, char *buf, size_t len)
 {
     int ret;
