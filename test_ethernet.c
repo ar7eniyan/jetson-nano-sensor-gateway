@@ -6,6 +6,7 @@
 #include <netinet/ether.h>  // ehter_aton()
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>  // exit(), EXIT_*
 #include <string.h>
 #include <sys/ioctl.h>  // ioctl()
 #include <sys/socket.h>  // socket()
@@ -191,13 +192,13 @@ int eth_recv_frame(eth_comms_t *comms, char *buf, size_t len)
 
 int main()
 {
-    int ret, exit_code = 0;
+    int ret, exit_code = EXIT_SUCCESS;
 
     struct ether_addr *periph_ctrl_mac_addr = ether_aton(PERIPH_CTRL_MAC);
     if (periph_ctrl_mac_addr == NULL) {
         fprintf(stderr, "Invalid MAC address specified: %s\n", PERIPH_CTRL_MAC);
-        exit_code = 1;
-        goto close_sock;
+        exit_code = EXIT_FAILURE;
+        goto finalize;
     }
 
     eth_comms_t comms;
@@ -206,13 +207,16 @@ int main()
         .peer_mac_ptr = periph_ctrl_mac_addr->ether_addr_octet});
     if (ret == -1) {
         fprintf(stderr, "Can't open the socket or bind to it, exiting...\n");
-        return 1;
+        exit_code = EXIT_FAILURE;
+        goto finalize;
     }
 
     const char ping[4] = {'p', 'i', 'n', 'g'};
     ret = eth_send_frame(&comms, ping, sizeof ping);
     if (ret == -1) {
         fprintf(stderr, "Error sending the ping packet\n");
+        exit_code = EXIT_FAILURE;
+        goto finalize;
     }
     printf("Ping-\n");
 
@@ -221,19 +225,19 @@ int main()
     ret = eth_recv_frame(&comms, recv_buf, sizeof recv_buf);
     if (ret == -1) {
         fprintf(stderr, "Error receiving the pong packet\n");
-        exit_code = 1;
-        goto close_sock;
+        exit_code = EXIT_FAILURE;
+        goto finalize;
     }
     if (ret == sizeof pong && memcmp(recv_buf, pong, sizeof pong) == 0) {
         fprintf(stderr, "Got pong frame != ['p', 'o', 'n', 'g'] (length %d)\n",
             ret);
-        exit_code = 1;
-        goto close_sock;
+        exit_code = EXIT_FAILURE;
+        goto finalize;
     }
 
     printf("-pong\n");
 
-close_sock:
+finalize:
     eth_close(&comms);
-    return exit_code;
+    exit(exit_code);
 }
