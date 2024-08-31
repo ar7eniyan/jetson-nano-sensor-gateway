@@ -4,6 +4,7 @@
 #include <net/if.h>  // struct ifreq, various ioctls
 #include <net/if_arp.h>  // ARPHRD_ETHER
 #include <netinet/ether.h>  // ehter_aton()
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>  // ioctl()
@@ -15,8 +16,14 @@
 #define CUSTOM_ETHERTYPE 0xDEAD
 #define PERIPH_CTRL_MAC "aa:bb:cc:dd:ee:ff"  // Placeholder for now
 
-int mac_addr_from_ifname(int sock, char ifname[IFNAMSIZ], unsigned char (*mac_addr)[6])
-{
+typedef struct {
+    int sockfd;
+    int ifindex;
+} bound_raw_sock_t;
+
+int mac_addr_from_ifname(
+    int sock, char ifname[IFNAMSIZ], unsigned char (*mac_addr)[6]
+) {
     size_t len = strnlen(ifname, IFNAMSIZ);
     if (len == IFNAMSIZ) {
         fprintf(stderr, "Ifname is not NULL-terminated\n");
@@ -30,11 +37,9 @@ int mac_addr_from_ifname(int sock, char ifname[IFNAMSIZ], unsigned char (*mac_ad
         return -1;
     }
     if (req.ifr_hwaddr.sa_family != ARPHRD_ETHER) {
-        fprintf(
-            stderr,
-            "The interaface's ARP hardware type is 0x%x, 0x%x (ARPHRD_ETHER) expected\n",
-            req.ifr_hwaddr.sa_family, ARPHRD_ETHER
-        );
+        fprintf(stderr, "The interaface's ARP hardware type is 0x%x, 0x%x"
+            "(ARPHRD_ETHER) expected\n", req.ifr_hwaddr.sa_family,
+            ARPHRD_ETHER);
         return -1;
     }
 
@@ -60,47 +65,69 @@ int ifindex_from_ifname(int sock, char ifname[IFNAMSIZ])
     return req.ifr_ifindex;
 }
 
-int main()
-{
-    int ret, exit_code = 0;
-    char ifname[IFNAMSIZ];
-    strlcpy(ifname, "enp4s0", IFNAMSIZ);
+int raw_sock_open_and_bind(
+    bound_raw_sock_t *raw_sock, const char *ifname, uint16_t ethertype
+) {
+    char ifname_buf[IFNAMSIZ];
+    if (strlcpy(ifname_buf, ifname, sizeof ifname_buf) >= sizeof ifname_buf) {
+        fprintf(stderr, "The supplied ifname is too long (>15 chars)\n");
+        goto exit_error;
+    }
 
-    int raw_sock = socket(AF_PACKET, SOCK_DGRAM, htons(ETH_P_ALL));
-    if (raw_sock == -1) {
+    int sockfd = socket(AF_PACKET, SOCK_DGRAM, htons(ETH_P_ALL));
+    if (sockfd == -1) {
         perror("Unable to create packet raw socket");
-        exit_code = 1;
-        goto close_sock;
+        goto exit_error;
     }
 
-    unsigned char mac_addr[6];
-    int ifindex = ifindex_from_ifname(raw_sock, ifname);
+    unsigned char mac_bytes[6];
+    int ifindex = ifindex_from_ifname(sockfd, ifname_buf);
     if (ifindex == -1) {
-        fprintf(stderr, "Unable to get the index of the interface \"%s\"\n", ifname);
-        exit_code = 1;
-        goto close_sock;
+        fprintf(stderr, "Can't get the index of the interface \"%s\"\n",
+            ifname_buf);
+        goto exit_error;
     }
-    if (mac_addr_from_ifname(raw_sock, ifname, &mac_addr) == -1) {
-        fprintf(stderr, "Unable to get MAC address of the interface \"%s\"\n", ifname);
-        exit_code = 1;
-        goto close_sock;
+    if (mac_addr_from_ifname(sockfd, ifname_buf, &mac_bytes) == -1) {
+        fprintf(stderr, "Can't get the MAC address of the interface \"%s\"\n",
+            ifname_buf);
+        goto exit_error;
     }
 
-    printf("interface %s\n", ifname);
+    printf("Binding to interface %s\n", ifname_buf);
     printf("    index %d\n", ifindex);
-    printf("    mac %02x:%02x:%02x:%02x:%02x:%02x\n",
-        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+    printf("    mac %02x:%02x:%02x:%02x:%02x:%02x\n", mac_bytes[0],
+        mac_bytes[1], mac_bytes[2], mac_bytes[3], mac_bytes[4], mac_bytes[5]);
 
     struct sockaddr_ll bind_addr = {
         .sll_family = AF_PACKET,
-        .sll_protocol = CUSTOM_ETHERTYPE,
+        .sll_protocol = ethertype,
         .sll_ifindex = ifindex
     };
 
-    if (bind(raw_sock, (struct sockaddr *)&bind_addr, sizeof bind_addr) == -1) {
+    if (bind(sockfd, (struct sockaddr *)&bind_addr, sizeof bind_addr) == -1) {
         perror("Unable to bind to the interface and protocol: ");
-        exit_code = 1;
-        goto close_sock;
+        goto exit_error;
+    }
+
+    raw_sock->sockfd = sockfd;
+    raw_sock->ifindex = ifindex;
+    return 0;
+
+exit_error:
+    if (sockfd != -1) {
+        assert(close(sockfd) == 0 && "Error closing socket");
+    }
+    return -1;
+}
+
+int main()
+{
+    int ret, exit_code = 0;
+
+    bound_raw_sock_t raw_sock;
+    if (raw_sock_open_and_bind(&raw_sock, "enp4s0", CUSTOM_ETHERTYPE) == -1) {
+        fprintf(stderr, "Can't open the socket or bind to it, exiting...\n");
+        return 1;
     }
 
     struct ether_addr *periph_ctrl_mac_addr = ether_aton(PERIPH_CTRL_MAC);
@@ -115,14 +142,14 @@ int main()
     struct sockaddr_ll periph_ctrl_addr = {
         .sll_family = AF_PACKET,
         .sll_protocol = htons(CUSTOM_ETHERTYPE),
-        .sll_ifindex = ifindex,
+        .sll_ifindex = raw_sock.ifindex,
         .sll_halen = 6
     };
     memcpy(periph_ctrl_addr.sll_addr, periph_ctrl_mac_addr->ether_addr_octet, 6);
 
     const char ping[4] = {'p', 'i', 'n', 'g'};
     ret = sendto(
-        raw_sock, ping, sizeof ping, 0,
+        raw_sock.sockfd, ping, sizeof ping, 0,
         (struct sockaddr *)&periph_ctrl_addr, sizeof periph_ctrl_addr
     );
     if (ret == -1) {
@@ -137,7 +164,7 @@ int main()
     socklen_t recv_addrlen = sizeof recv_addr;
     for (;;) {
         ret = recvfrom(
-            raw_sock, recv_buf, sizeof recv_buf, 0,
+            raw_sock.sockfd, recv_buf, sizeof recv_buf, 0,
             (struct sockaddr *)&recv_addr, &recv_addrlen
         );
         if (ret == -1) {
@@ -171,7 +198,7 @@ int main()
     printf("YEAAAAAH!\n");
 
 close_sock:
-    if(raw_sock != -1 && close(raw_sock) == -1) {
+    if(close(raw_sock.sockfd) == -1) {
         perror("Somehow close() failed");
     }
 
