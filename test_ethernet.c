@@ -19,7 +19,8 @@
 typedef struct {
     int sockfd;
     int ifindex;
-    unsigned char peer_mac[6];
+    unsigned char peer_mac_bytes[6];
+    uint16_t ethertype;
 } eth_comms_t;
 
 int mac_addr_from_ifname(
@@ -118,7 +119,8 @@ int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t settings)
 
     comms->sockfd = sockfd;
     comms->ifindex = ifindex;
-    memcpy(comms->peer_mac, settings.peer_mac_ptr, 6);
+    memcpy(comms->peer_mac_bytes, settings.peer_mac_ptr, 6);
+    comms->ethertype = settings.ethertype;
     return 0;
 
 exit_error:
@@ -131,6 +133,57 @@ exit_error:
 void eth_close(eth_comms_t *comms)
 {
     assert(close(comms->sockfd) && "Can't close the socket");
+}
+
+int eth_send_frame(eth_comms_t *comms, const char *buf, size_t len)
+{
+    struct sockaddr_ll peer_addr = {
+        .sll_family = AF_PACKET,
+        .sll_protocol = htons(comms->ethertype),
+        .sll_ifindex = comms->ifindex,
+        .sll_halen = 6
+    };
+    memcpy(peer_addr.sll_addr, comms->peer_mac_bytes, 6);
+
+    int ret = sendto(comms->sockfd, buf, sizeof buf, 0,
+        (struct sockaddr *)&peer_addr, sizeof peer_addr);
+    if (ret == -1) {
+        perror("Error sending Ethernet frame");
+    }
+    return ret;
+}
+
+int eth_recv_frame(eth_comms_t *comms, char *buf, size_t len)
+{
+    int ret;
+    struct sockaddr_ll recv_addr;
+    socklen_t recv_addrlen = sizeof recv_addr;
+
+    for (;;) {
+        ret = recvfrom(
+            comms->sockfd, buf, len, 0,
+            (struct sockaddr *)&recv_addr, &recv_addrlen
+        );
+        if (ret == -1) {
+            perror("Error receiving Ethernet frame");
+            return -1;
+        }
+        assert(recv_addrlen == sizeof recv_addr &&
+            "Address of invalid length returned from recvfrom()"
+        );
+        assert(recv_addr.sll_hatype == ARPHRD_ETHER &&
+            "Got packet with unexpected ARP hardware type"
+        );
+        assert(recv_addr.sll_halen == 6 &&
+            "Got packet with unexpected MAC address length"
+        );
+        if (recv_addr.sll_pkttype == PACKET_HOST &&
+            ntohs(recv_addr.sll_protocol == CUSTOM_ETHERTYPE) &&
+            memcmp(recv_addr.sll_addr, comms->peer_mac_bytes, 6) == 0
+        ) {
+            return ret;
+        }
+    }
 }
 
 int main()
@@ -153,63 +206,29 @@ int main()
         return 1;
     }
 
-    struct sockaddr_ll periph_ctrl_addr = {
-        .sll_family = AF_PACKET,
-        .sll_protocol = htons(CUSTOM_ETHERTYPE),
-        .sll_ifindex = comms.ifindex,
-        .sll_halen = 6
-    };
-    memcpy(periph_ctrl_addr.sll_addr, periph_ctrl_mac_addr->ether_addr_octet, 6);
-
     const char ping[4] = {'p', 'i', 'n', 'g'};
-    ret = sendto(
-        comms.sockfd, ping, sizeof ping, 0,
-        (struct sockaddr *)&periph_ctrl_addr, sizeof periph_ctrl_addr
-    );
+    ret = eth_send_frame(&comms, ping, sizeof ping);
     if (ret == -1) {
-        perror("Error sending ping packet: ");
+        fprintf(stderr, "Error sending the ping packet\n");
+    }
+    printf("Ping-\n");
+
+    const char pong[4] = {'p', 'o', 'n', 'g'};
+    char recv_buf[sizeof pong];
+    ret = eth_recv_frame(&comms, recv_buf, sizeof recv_buf);
+    if (ret == -1) {
+        fprintf(stderr, "Error receiving the pong packet\n");
+        exit_code = 1;
+        goto close_sock;
+    }
+    if (ret == sizeof pong && memcmp(recv_buf, pong, sizeof pong) == 0) {
+        fprintf(stderr, "Got pong frame != ['p', 'o', 'n', 'g'] (length %d)\n",
+            ret);
         exit_code = 1;
         goto close_sock;
     }
 
-    const char pong[4] = {'p', 'o', 'n', 'g'};
-    char recv_buf[sizeof pong];
-    struct sockaddr_ll recv_addr;
-    socklen_t recv_addrlen = sizeof recv_addr;
-    for (;;) {
-        ret = recvfrom(
-            comms.sockfd, recv_buf, sizeof recv_buf, 0,
-            (struct sockaddr *)&recv_addr, &recv_addrlen
-        );
-        if (ret == -1) {
-            perror("Error receiving pong packet: ");
-            exit_code = 1;
-            goto close_sock;
-        }
-        assert(recv_addrlen == sizeof recv_addr &&
-            "Address of invalid length returned from recvfrom()"
-        );
-        assert(recv_addr.sll_hatype == ARPHRD_ETHER &&
-            "Got packet with unexpected ARP hardware type"
-        );
-        assert(recv_addr.sll_halen == periph_ctrl_addr.sll_halen &&
-            "Got packet with unexpected MAC address length"
-        );
-        if (
-            recv_addr.sll_pkttype == PACKET_HOST &&
-            ntohs(recv_addr.sll_protocol == CUSTOM_ETHERTYPE) &&
-            memcmp(recv_addr.sll_addr, periph_ctrl_addr.sll_addr, periph_ctrl_addr.sll_halen) == 0
-        ) {
-            if (ret == sizeof pong && memcmp(recv_buf, pong, sizeof pong) == 0) {
-                break;
-            }
-            fprintf(stderr, "Got pong message != ['p', 'o', 'n', 'g'] (length %d)\n", ret);
-            exit_code = 1;
-            goto close_sock;
-        }
-    }
-
-    printf("YEAAAAAH!\n");
+    printf("-pong\n");
 
 close_sock:
     eth_close(&comms);
