@@ -2,6 +2,7 @@
 #include <net/ethernet.h>  // ETH_P_* constants
 #include <net/if.h>  // struct ifreq, various ioctls
 #include <net/if_arp.h>  // ARPHRD_ETHER
+#include <netinet/ether.h>  // ehter_aton()
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>  // ioctl()
@@ -11,6 +12,7 @@
 #include <linux/if_packet.h>  // struct sockaddr_ll and others
 
 #define CUSTOM_ETHERTYPE 0xDEAD
+#define PERIPH_CTRL_MAC "aa:bb:cc:dd:ee:ff"  // Placeholder for now
 
 int mac_addr_from_ifname(int sock, char ifname[IFNAMSIZ], unsigned char (*mac_addr)[6])
 {
@@ -59,7 +61,7 @@ int ifindex_from_ifname(int sock, char ifname[IFNAMSIZ])
 
 int main()
 {
-    int exit_code = 0;
+    int ret, exit_code = 0;
     char ifname[IFNAMSIZ];
     strlcpy(ifname, "enp4s0", IFNAMSIZ);
 
@@ -96,6 +98,34 @@ int main()
 
     if (bind(raw_sock, (struct sockaddr *)&bind_addr, sizeof bind_addr) == -1) {
         perror("Unable to bind to the interface and protocol: ");
+        exit_code = 1;
+        goto close_sock;
+    }
+
+    struct ether_addr *periph_ctrl_mac_addr = ether_aton(PERIPH_CTRL_MAC);
+    if (periph_ctrl_mac_addr == NULL) {
+        fprintf(stderr, "Invalid MAC address specified: %s\n", PERIPH_CTRL_MAC);
+        exit_code = 1;
+        goto close_sock;
+    }
+
+    // Should I specify the ifindex for sending or is it set automatically after bind?
+    // NOTE: I should.
+    struct sockaddr_ll periph_ctrl_addr = {
+        .sll_family = AF_PACKET,
+        .sll_protocol = htons(CUSTOM_ETHERTYPE),
+        .sll_ifindex = ifindex,
+        .sll_halen = 6
+    };
+    memcpy(periph_ctrl_addr.sll_addr, periph_ctrl_mac_addr->ether_addr_octet, 6);
+
+    const char ping[4] = {'p', 'i', 'n', 'g'};
+    ret = sendto(
+        raw_sock, ping, sizeof ping, 0,
+        (struct sockaddr *)&periph_ctrl_addr, sizeof periph_ctrl_addr
+    );
+    if (ret == -1) {
+        perror("Error sending ping packet: ");
         exit_code = 1;
         goto close_sock;
     }
