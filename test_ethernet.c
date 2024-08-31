@@ -123,9 +123,14 @@ int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t settings)
 
 exit_error:
     if (sockfd != -1) {
-        assert(close(sockfd) == 0 && "Error closing socket");
+        assert(close(sockfd) == 0 && "Can't close the socket");
     }
     return -1;
+}
+
+void eth_close(eth_comms_t *comms)
+{
+    assert(close(comms->sockfd) && "Can't close the socket");
 }
 
 int main()
@@ -148,7 +153,6 @@ int main()
         return 1;
     }
 
- 
     struct sockaddr_ll periph_ctrl_addr = {
         .sll_family = AF_PACKET,
         .sll_protocol = htons(CUSTOM_ETHERTYPE),
@@ -208,9 +212,6 @@ int main()
     printf("YEAAAAAH!\n");
 
 close_sock:
-    if(close(comms.sockfd) == -1) {
-        perror("Somehow close() failed");
-    }
-
+    eth_close(&comms);
     return exit_code;
 }
