@@ -4,8 +4,8 @@ use nix::{
     libc::{sockaddr_ll, AF_PACKET},
     net::if_::if_nametoindex,
     sys::socket::{
-        bind, recvfrom, sendto, sockaddr, socket, AddressFamily, LinkAddr, SockFlag, SockProtocol,
-        SockType, SockaddrLike,
+        bind, recvfrom, sendto, sockaddr, socket, AddressFamily, LinkAddr, MsgFlags, SockFlag,
+        SockProtocol, SockType, SockaddrLike,
     },
 };
 
@@ -58,6 +58,36 @@ impl EthernetComms {
             sockfd,
             peer_address,
         })
+    }
+
+    fn send_frame(&self, frame: &[u8]) -> nix::Result<usize> {
+        // Should I check the frame size to be within IEEE802.3 limits (46-1500 bytes)?
+        // Or is it done inside the implementation?
+        sendto(
+            self.sockfd.as_raw_fd(),
+            frame,
+            &self.peer_address,
+            MsgFlags::empty(),
+        )
+    }
+
+    fn recv_frame(&self, buf: &mut [u8]) -> nix::Result<usize> {
+        loop {
+            let (read_len, recv_addr) = recvfrom::<LinkAddr>(self.sockfd.as_raw_fd(), buf)
+                .map(|(len, addr)| (len, addr.unwrap()))?;
+
+            debug_assert_eq!(recv_addr.hatype(), nix::libc::ARPHRD_ETHER);
+            debug_assert_eq!(recv_addr.halen(), 6);
+            debug_assert_eq!(
+                u16::from_be(recv_addr.protocol()),
+                self.peer_address.protocol()
+            );
+            // 0 below is PACKET_HOST in Linux API, TODO: use the definition
+            // from libc crate when it get added there.
+            if recv_addr.pkttype() == 0 && recv_addr.addr() == self.peer_address.addr() {
+                return Ok(read_len);
+            }
+        }
     }
 }
 
