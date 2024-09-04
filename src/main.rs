@@ -37,13 +37,13 @@ impl EthernetComms {
         .map_err(perror_fmt("Can't create link layer socket"))?;
 
         let mut peer_address = sockaddr_ll {
-            sll_family: AF_PACKET.try_into().unwrap(),
-            sll_protocol: ethertype,
-            sll_ifindex: ifindex.try_into().unwrap(),
+            sll_family: AF_PACKET.try_into().unwrap(), // Should always be AF_PACKET
+            sll_protocol: ethertype.to_be(),           // For bind()
+            sll_ifindex: ifindex.try_into().unwrap(),  // For bind()
             sll_hatype: 0,
             sll_pkttype: 0,
-            sll_halen: 6,
-            sll_addr: [0; 8],
+            sll_halen: 6,     // For further sendto()
+            sll_addr: [0; 8], // For futher sendto()
         };
         peer_address.sll_addr[..6].clone_from_slice(&peer_mac);
         let peer_address = unsafe {
