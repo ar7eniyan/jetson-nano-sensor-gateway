@@ -23,7 +23,7 @@ struct EthernetComms {
 
 impl EthernetComms {
     fn new(ethertype: u16, ifname: &str, peer_mac: [u8; 6]) -> Result<Self, String> {
-        let ifindex = if_nametoindex(IFNAME).map_err(perror_fmt(
+        let ifindex = if_nametoindex(ifname).map_err(perror_fmt(
             "Can't get the index of the interface".to_owned() + ifname,
         ))?;
         println!("Using interface {ifname} (index {ifindex})");
@@ -92,7 +92,7 @@ impl EthernetComms {
 }
 
 fn main() -> Result<(), String> {
-    let comms = EthernetComms::new(0xDEAD, "enp4s0", [0; 6])?;
+    let comms = EthernetComms::new(0xDEAD, IFNAME, [0; 6])?;
     dbg!(comms);
 
     Ok(())
