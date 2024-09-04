@@ -187,8 +187,10 @@ int eth_recv_frame(eth_comms_t *comms, char *buf, size_t len)
         assert(recv_addr.sll_halen == 6 &&
             "Got packet with unexpected MAC address length"
         );
+        assert(recv_addr.sll_protocol == comms->peer_addr.sll_protocol &&
+            "Got packet with unexpected EtherType"
+        );
         if (recv_addr.sll_pkttype == PACKET_HOST &&
-            ntohs(recv_addr.sll_protocol == CUSTOM_ETHERTYPE) &&
             memcmp(recv_addr.sll_addr, comms->peer_addr.sll_addr, 6) == 0
         ) {
             return ret;
