@@ -75,7 +75,7 @@ typedef struct {
 
 typedef struct {
     const char *ifname;
-    uint16_t ethertype;
+    uint16_t ethertype;  // In host byte order
     unsigned char *peer_mac_ptr;  // Must be 6 bytes long!
 } eth_open_and_bind_params_t;
 
@@ -119,7 +119,7 @@ int eth_open_and_bind(eth_comms_t *comms, eth_open_and_bind_params_t params)
     // Fill in only the fields needed for bind()
     struct sockaddr_ll peer_addr = {
         .sll_family = AF_PACKET,
-        .sll_protocol = params.ethertype,
+        .sll_protocol = htons(params.ethertype),
         .sll_ifindex = ifindex,
     };
 
