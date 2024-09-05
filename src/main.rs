@@ -140,7 +140,24 @@ impl EthernetComms {
 
 fn main() -> Result<(), String> {
     let comms = EthernetComms::new(0xDEAD, IFNAME, [0; 6])?;
-    dbg!(comms);
+    dbg!(&comms);
+
+    let ping_string = "ping".to_string() + &" ".repeat(40) + "ping";
+    let pong_string = "pong".to_string() + &" ".repeat(40) + "pong";
+    let mut recv_buf = vec![0_u8; pong_string.len()];
+
+    comms
+        .send_frame(ping_string.as_bytes())
+        .map_err(perror_fmt("Can't send ping message"))?;
+    println!("Sent ping");
+
+    comms
+        .recv_frame(&mut recv_buf)
+        .map_err(perror_fmt("Can't receive pong message"))?;
+    if recv_buf != pong_string.as_bytes() {
+        return Err("The received message is not equal to the pong message expected".to_string());
+    }
+    println!("Received pong");
 
     Ok(())
 }
