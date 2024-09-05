@@ -1,8 +1,7 @@
-use std::os::fd::AsRawFd;
+use std::{mem::MaybeUninit, os::fd::AsRawFd};
 
 use nix::{
-    libc::{sockaddr_ll, AF_PACKET},
-    net::if_::if_nametoindex,
+    libc::{sockaddr_ll, AF_PACKET, ARPHRD_ETHER},
     sys::socket::{
         bind, recvfrom, sendto, sockaddr, socket, AddressFamily, LinkAddr, MsgFlags, SockFlag,
         SockProtocol, SockType, SockaddrLike,
@@ -15,6 +14,17 @@ fn perror_fmt(message: impl AsRef<str>) -> impl Fn(nix::errno::Errno) -> String 
     move |errno| message.as_ref().to_string() + ": " + errno.desc()
 }
 
+nix::ioctl_readwrite_bad!(
+    ioctl_get_if_index,
+    nix::libc::SIOCGIFINDEX,
+    nix::libc::ifreq
+);
+nix::ioctl_readwrite_bad!(
+    ioctl_get_if_hwaddr,
+    nix::libc::SIOCGIFHWADDR,
+    nix::libc::ifreq
+);
+
 #[derive(Debug)]
 struct EthernetComms {
     sockfd: std::os::fd::OwnedFd,
@@ -23,11 +33,6 @@ struct EthernetComms {
 
 impl EthernetComms {
     fn new(ethertype: u16, ifname: &str, peer_mac: [u8; 6]) -> Result<Self, String> {
-        let ifindex = if_nametoindex(ifname).map_err(perror_fmt(
-            "Can't get the index of the interface".to_owned() + ifname,
-        ))?;
-        println!("Using interface {ifname} (index {ifindex})");
-
         let sockfd = socket(
             AddressFamily::Packet,
             SockType::Datagram,
@@ -36,10 +41,52 @@ impl EthernetComms {
         )
         .map_err(perror_fmt("Can't create link layer socket"))?;
 
+        if !ifname.is_ascii() {
+            return Err("The interface name must be an ASCII string".to_string());
+        }
+        if ifname.len() >= nix::libc::IFNAMSIZ {
+            return Err(format!(
+                "Interface name too long: {} characters, less than {} expected",
+                ifname.len(),
+                nix::libc::IFNAMSIZ
+            ));
+        }
+        // ifreq.ifr_name gets filled with zeros, so we only need to ensure not to override
+        // the last NULL byte to have a valid C string there.
+        let mut ifreq = unsafe { MaybeUninit::<nix::libc::ifreq>::zeroed().assume_init() };
+        for i in 0..ifname.len() {
+            ifreq.ifr_name[i] = ifname.as_bytes()[i] as _;
+        }
+
+        let mac_addr: [i8; 6] = unsafe {
+            ioctl_get_if_hwaddr(sockfd.as_raw_fd(), &mut ifreq).map_err(perror_fmt(format!(
+                "Can't get the hardware address of the interface {ifname}"
+            )))?;
+            if ifreq.ifr_ifru.ifru_hwaddr.sa_family != ARPHRD_ETHER {
+                return Err(format!(
+                    "The type of the interface \"{ifname}\" is not ARPHRD_ETHERNET"
+                ));
+            }
+            ifreq.ifr_ifru.ifru_hwaddr.sa_data[..6].try_into().unwrap()
+        };
+        let ifindex = unsafe {
+            ioctl_get_if_index(sockfd.as_raw_fd(), &mut ifreq).map_err(perror_fmt(format!(
+                "Can't get the index of the interface \"{ifname}\""
+            )))?;
+            ifreq.ifr_ifru.ifru_ifindex
+        };
+
+        println!("Binding to the interface \"{ifname}\"");
+        println!("    ifindex {}", ifindex);
+        println!(
+            "    mac {:0x}{:0x}{:0x}{:0x}{:0x}{:0x}",
+            mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]
+        );
+
         let mut peer_address = sockaddr_ll {
             sll_family: AF_PACKET.try_into().unwrap(), // Should always be AF_PACKET
             sll_protocol: ethertype.to_be(),           // For bind()
-            sll_ifindex: ifindex.try_into().unwrap(),  // For bind()
+            sll_ifindex: ifindex,                      // For bind()
             sll_hatype: 0,
             sll_pkttype: 0,
             sll_halen: 6,     // For further sendto()
