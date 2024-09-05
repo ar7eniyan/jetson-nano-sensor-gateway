@@ -37,7 +37,7 @@ impl EthernetComms {
             AddressFamily::Packet,
             SockType::Datagram,
             SockFlag::empty(),
-            SockProtocol::EthAll, // Do I need to call htons()?
+            SockProtocol::EthAll,
         )
         .map_err(perror_fmt("Can't create link layer socket"))?;
 
