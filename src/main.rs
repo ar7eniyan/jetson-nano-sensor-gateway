@@ -8,8 +8,6 @@ use nix::{
     },
 };
 
-const IFNAME: &str = "enp4s0";
-
 fn perror_fmt(message: impl AsRef<str>) -> impl Fn(nix::errno::Errno) -> String {
     move |errno| message.as_ref().to_string() + ": " + errno.desc()
 }
@@ -139,7 +137,11 @@ impl EthernetComms {
 }
 
 fn main() -> Result<(), String> {
-    let comms = EthernetComms::new(0xDEAD, IFNAME, [0; 6])?;
+    let args: Vec<String> = std::env::args().collect();
+    let ifname = &args
+        .get(1)
+        .ok_or("The interface name isn't specified in the first command line argument")?;
+    let comms = EthernetComms::new(0xDEAD, ifname, [0; 6])?;
     dbg!(&comms);
 
     let ping_string = "ping".to_string() + &" ".repeat(40) + "ping";
