@@ -138,8 +138,7 @@ fn main() -> Result<(), String> {
     let ifname = &args
         .get(1)
         .ok_or("The interface name isn't specified in the first command line argument")?;
-    let comms = EthernetComms::new(0xDEAD, ifname, [0; 6])?;
-    dbg!(&comms);
+    let comms = EthernetComms::new(0xDEAD, ifname, [0xE2, 0x18, 0xE1, 0x2C, 0xF9, 0x79])?;
 
     let ping_string = "ping".to_string() + &" ".repeat(40) + "ping";
     let pong_string = "pong".to_string() + &" ".repeat(40) + "pong";
