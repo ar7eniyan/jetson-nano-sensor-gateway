@@ -123,10 +123,7 @@ impl EthernetComms {
 
             debug_assert_eq!(recv_addr.hatype(), nix::libc::ARPHRD_ETHER);
             debug_assert_eq!(recv_addr.halen(), 6);
-            debug_assert_eq!(
-                u16::from_be(recv_addr.protocol()),
-                self.peer_address.protocol()
-            );
+            debug_assert_eq!(recv_addr.protocol(), self.peer_address.protocol());
             // 0 below is PACKET_HOST in Linux API, TODO: use the definition
             // from libc crate when it get added there.
             if recv_addr.pkttype() == 0 && recv_addr.addr() == self.peer_address.addr() {
