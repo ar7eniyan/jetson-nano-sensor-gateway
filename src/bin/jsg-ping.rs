@@ -40,7 +40,7 @@ fn main() -> Result<(), String> {
         })?;
     let ifname = &args
         .get(3)
-        .ok_or("The interface name isn't specified in the first command line argument")?;
+        .ok_or("The third command line argument must be the network interface to use")?;
     let comms = EthernetComms::new(0xDEAD, ifname, [0xE2, 0x18, 0xE1, 0x2C, 0xF9, 0x79])?;
 
     let mut rtt = std::time::Duration::ZERO;
