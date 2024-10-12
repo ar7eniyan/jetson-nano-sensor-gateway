@@ -1,6 +1,6 @@
 [package]
-name = "jetson-nano-sensor-gateway"
-version = "0.1.0"
+name = "sb_ctrl_bridge"
+version = "0.0.1"
 edition = "2021"
 
 [dependencies]
