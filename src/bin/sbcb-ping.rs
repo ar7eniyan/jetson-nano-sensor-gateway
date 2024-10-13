@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use jetson_nano_sensor_gateway::{perror_fmt, EthernetComms};
+use sb_ctrl_bridge::{perror_fmt, EthernetComms};
 
 fn test_rtt(comms: &EthernetComms, data_size: usize) -> Result<std::time::Duration, String> {
     let ping_string = "ping".to_string() + &" ".repeat(data_size - 8) + "ping";
