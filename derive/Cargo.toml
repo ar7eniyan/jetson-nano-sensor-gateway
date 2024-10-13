@@ -3,5 +3,9 @@ name = "sb_ctrl_bridge_derive"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+proc-macro = true
+
 [dependencies]
 sb_ctrl_bridge_impl = { path = "../impl" }
+

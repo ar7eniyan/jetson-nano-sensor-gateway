@@ -77,6 +77,7 @@ fn main() -> Result<(), String> {
                 .inspect_err(|e| {
                     println!("Error writing stats to the file: {e}");
                 })
+                .ok()
         });
 
     rtt_times_ms.sort_unstable_by(|l, r| l.partial_cmp(r).unwrap());
