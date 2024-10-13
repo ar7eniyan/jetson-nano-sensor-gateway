@@ -1,0 +1,6 @@
+[package]
+name = "sb_ctrl_bridge_impl"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

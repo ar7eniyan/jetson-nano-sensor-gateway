@@ -27,13 +27,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "jetson-nano-sensor-gateway"
-version = "0.1.0"
-dependencies = [
- "nix",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.158"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -60,3 +53,23 @@ dependencies = [
  "libc",
  "memoffset",
 ]
+
+[[package]]
+name = "sb_ctrl_bridge"
+version = "0.0.1"
+dependencies = [
+ "nix",
+ "sb_ctrl_bridge_derive",
+ "sb_ctrl_bridge_impl",
+]
+
+[[package]]
+name = "sb_ctrl_bridge_derive"
+version = "0.0.1"
+dependencies = [
+ "sb_ctrl_bridge_impl",
+]
+
+[[package]]
+name = "sb_ctrl_bridge_impl"
+version = "0.0.1"
